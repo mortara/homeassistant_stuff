@@ -1,0 +1,141 @@
+esphome:
+  name: aio_sensor_1
+  platform: ESP8266
+  board: d1_mini
+  on_boot:
+    priority: 600
+    then:
+      - lambda: id(oled).turn_off();
+
+# Enable Home Assistant API
+# api:
+
+ota:
+  password: "c5fe233ce40f064949222ff0c8324c5c"
+
+wifi:
+  networks:
+  - ssid: !secret wifi_ssid
+    password: !secret wifi_password
+  - ssid: !secret wifi_ssid_julia
+    password: !secret wifi_password_julia
+  - ssid: !secret wifi_ssid_hotspot
+    password: !secret wifi_password_hotspot
+  
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Dht22 Fallback Hotspot"
+    password: "bvtVdTbqkWEb"
+
+captive_portal:
+
+web_server:
+  port: 80
+  
+substitutions:
+  devicename: aio_sensor_1
+  friendly_name: AIO Sensor 1
+
+# Enable logging
+logger:
+  logs:
+      # Make adc input less verbose
+      adc: INFO
+
+i2c:
+  sda: D2
+  scl: D1
+  scan: false
+  id: bus_a
+  setup_priority: -100
+
+time:
+  - platform: sntp
+    id: esptime
+
+font:
+  # gfonts://family[@weight]
+  - file: "gfonts://Roboto"
+    id: font1
+    size: 20
+
+  - file: "gfonts://Roboto"
+    id: font3
+    size: 14
+
+mqtt:
+  broker: vault101.i234.me
+  port: 8883
+  username: homeassistant
+  password: !secret mqtt_password
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: D6
+      mode: INPUT_PULLUP
+      inverted: True
+    name: "Display on button"
+    on_press:
+    - lambda: id(oled).turn_on();
+    - delay: 5000ms
+    - lambda: id(oled).turn_off();
+
+sensor:
+  - platform: dht
+    pin: D5
+    temperature:
+      name: "DHT22 Temperature"
+      id: "temp"
+    humidity:
+      name: "DHT22 Humidity"
+      id: "hum"
+    update_interval: 20s
+    model: AM2302
+    # MQ2 Smoke Gas Sensor
+  - platform: adc
+    pin: A0
+    name: "Gas Sensor"
+    id: "gas"
+    update_interval: 10s
+    filters:
+      - multiply: 100
+    unit_of_measurement: "%"
+    icon: "mdi:percent"
+
+text_sensor:
+  - platform: mqtt_subscribe
+    name: "MOTD"
+    id: motd
+    topic: motd
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    id: oled
+    address: 0x3C
+    i2c_id: bus_a
+    setup_priority: -100
+    lambda: |-
+      // Print time in HH:MM format
+      it.strftime(0, 60, id(font1), TextAlign::BASELINE_LEFT, "%H:%M", id(esptime).now());
+
+      if (id(motd).has_state()) {
+        it.printf(0, 0, id(font3), TextAlign::TOP_LEFT, "%s", id(motd).state.c_str());
+      }
+
+      if (id(gas).has_state()) {
+        it.printf(127, 0, id(font3), TextAlign::TOP_RIGHT , "%.1f%%", id(gas).state);
+      }
+
+      // Print inside temperature (from homeassistant sensor)
+      if (id(temp).has_state()) {
+        it.printf(127, 23, id(font3), TextAlign::TOP_RIGHT , "T: %.1f°", id(temp).state);
+      }
+
+      // Print outside temperature (from homeassistant sensor)
+      if (id(hum).has_state()) {
+        it.printf(127, 60, id(font3), TextAlign::BASELINE_RIGHT , "F: %.1f%%", id(hum).state);
+      }
+ 
